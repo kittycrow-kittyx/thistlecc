@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "dependencies": [
+    {
+      "repository": "kittycrow-kittyx/thistle-asm",
+      "path": "vendor/thistle-asm",
+      "commit": "f99cb8a6ea1c0f3d9e4199b19110a1b5876e7074",
+      "tag": "v2.1.0"
+    }
+  ]
+}

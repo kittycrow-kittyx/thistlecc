@@ -1,43 +1,48 @@
+import { parseJson } from "./json.js";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
-import type { ConfigLoadResult, ThistleccConfig } from "./types.js";
+import type { ConfigLoadResult, ThistleccConfig, JsonValue, JsonObject } from "./types.js";
 import { fail, isRegularFile } from "./util.js";
+
+export function emptyConfig(): ThistleccConfig {
+  return { mikuosHome: null, converter: null, cc: null, cxx: null, strip: null, readelf: null, toolchainPrefix: null, march: null, mabi: null, sysroot: null, outputExtension: null, reproducible: null, colour: null, defaultArgs: null, converterArgs: null };
+}
 
 const CONFIG_NAMES = ["thistlecc.json", ".thistlecc.json"] as const;
 
-function stringValue(record: Record<string, unknown>, key: keyof ThistleccConfig): string | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
+function stringValue(record: JsonObject, key: keyof ThistleccConfig): string | null {
+  const value = record[key] ?? null;
+  if (!Object.hasOwn(record, key)) return null;
   if (typeof value !== "string" || value.length === 0) fail(`configuration key ${key} must be a non-empty string`, 3);
   return value;
 }
 
-function booleanValue(record: Record<string, unknown>, key: keyof ThistleccConfig): boolean | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
+function booleanValue(record: JsonObject, key: keyof ThistleccConfig): boolean | null {
+  const value = record[key] ?? null;
+  if (!Object.hasOwn(record, key)) return null;
   if (typeof value !== "boolean") fail(`configuration key ${key} must be a boolean`, 3);
   return value;
 }
 
-function stringArray(record: Record<string, unknown>, key: keyof ThistleccConfig): string[] | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
+function stringArray(record: JsonObject, key: keyof ThistleccConfig): string[] | null {
+  const value = record[key] ?? null;
+  if (!Object.hasOwn(record, key)) return null;
   if (!Array.isArray(value) || value.some(item => typeof item !== "string")) {
     fail(`configuration key ${key} must be an array of strings`, 3);
   }
-  return [...value] as string[];
+  return value.map(item => { if (typeof item !== "string") fail(`configuration key ${key} must be an array of strings`, 3); return item; });
 }
 
-function parseConfig(text: string, path: string): ThistleccConfig {
-  let parsed: unknown;
+function configRecord(text: string, path: string): JsonObject {
+  let parsed: JsonValue = null;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseJson(text);
   } catch (error) {
-    fail(`could not parse ${path}: ${error instanceof Error ? error.message : String(error)}`, 3);
+    fail(`could not parse ${path}: ${error instanceof Error ? error.message : (typeof error === "string" ? error : "non-Error exception")}`, 3);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) fail(`${path} must contain a JSON object`, 3);
-  const record = parsed as Record<string, unknown>;
+  const record = parsed;
   const allowed = new Set([
     "$schema", "mikuosHome", "converter", "cc", "cxx", "strip", "readelf",
     "toolchainPrefix", "march", "mabi", "sysroot", "outputExtension",
@@ -46,62 +51,75 @@ function parseConfig(text: string, path: string): ThistleccConfig {
   for (const key of Object.keys(record)) {
     if (!allowed.has(key)) fail(`${path}: unknown configuration key ${key}`, 3);
   }
-  if (record.$schema !== undefined && typeof record.$schema !== "string") fail(`${path}: $schema must be a string`, 3);
+  if (Object.hasOwn(record, "$schema") && typeof (record.$schema ?? null) !== "string") fail(`${path}: $schema must be a string`, 3);
+  return record;
+}
+
+type StringConfigKey = "mikuosHome" | "converter" | "cc" | "cxx" | "strip" | "readelf" | "toolchainPrefix" | "march" | "mabi" | "sysroot";
+
+function parseConfig(text: string, path: string): ThistleccConfig {
+  const record = configRecord(text, path);
   const outputExtension = stringValue(record, "outputExtension");
-  if (outputExtension !== undefined && outputExtension !== "39" && outputExtension !== "thx") {
+  if (outputExtension != null && outputExtension !== "39" && outputExtension !== "thx") {
     fail(`${path}: outputExtension must be "39" or "thx"`, 3);
   }
   const colour = stringValue(record, "colour");
-  if (colour !== undefined && !["auto", "always", "never"].includes(colour)) {
+  if (colour !== null && colour !== "auto" && colour !== "always" && colour !== "never") {
     fail(`${path}: colour must be auto, always or never`, 3);
   }
 
-  const result: ThistleccConfig = {};
-  const strings: Array<keyof ThistleccConfig> = [
+  const result = emptyConfig();
+  const strings: StringConfigKey[] = [
     "mikuosHome", "converter", "cc", "cxx", "strip", "readelf",
     "toolchainPrefix", "march", "mabi", "sysroot",
   ];
   for (const key of strings) {
     const value = stringValue(record, key);
-    if (value !== undefined) (result as Record<string, unknown>)[key] = value;
+    if (value != null) result[key] = value;
   }
-  if (outputExtension !== undefined) result.outputExtension = outputExtension as "39" | "thx";
+  if (outputExtension != null) result.outputExtension = outputExtension;
   const reproducible = booleanValue(record, "reproducible");
-  if (reproducible !== undefined) result.reproducible = reproducible;
-  if (colour !== undefined) result.colour = colour as "auto" | "always" | "never";
+  if (reproducible != null) result.reproducible = reproducible;
+  if (colour != null) result.colour = colour;
   const defaultArgs = stringArray(record, "defaultArgs");
-  if (defaultArgs !== undefined) result.defaultArgs = defaultArgs;
+  if (defaultArgs != null) result.defaultArgs = defaultArgs;
   const converterArgs = stringArray(record, "converterArgs");
-  if (converterArgs !== undefined) result.converterArgs = converterArgs;
+  if (converterArgs != null) result.converterArgs = converterArgs;
   return result;
 }
 
-export function scanConfigArguments(argv: readonly string[]): { path?: string; disabled: boolean } {
-  let path: string | undefined;
+function configPathValue(value: string | null): string {
+  if (!value) fail("--config requires a path");
+  return value;
+}
+
+export function scanConfigArguments(argv: readonly string[]): { path: string | null; disabled: boolean } {
+  let path: string | null = null;
   let disabled = false;
   for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
+    const argument = argv[index] ?? "";
     if (argument === "--no-config") disabled = true;
     if (argument === "--config") {
-      const value = argv[index + 1];
-      if (!value) fail("--config requires a path");
-      path = value;
+      path = configPathValue(argv[index + 1] ?? null);
       index += 1;
-    } else if (argument?.startsWith("--config=")) {
+      continue;
+    }
+    if (argument.startsWith("--config=")) {
       path = argument.slice("--config=".length);
     }
   }
-  return path === undefined ? { disabled } : { path, disabled };
+  return { path, disabled };
 }
 
-export async function loadConfig(cwd: string, explicitPath?: string, disabled = false): Promise<ConfigLoadResult> {
-  if (disabled) return { value: {} };
+async function readExplicitConfig(path: string): Promise<ConfigLoadResult> {
+  if (!(await isRegularFile(path))) fail(`configuration file not found: ${path}`, 3);
+  return { path, value: parseConfig(await readFile(path, "utf8"), path) };
+}
 
-  if (explicitPath) {
-    const path = resolve(cwd, explicitPath);
-    if (!(await isRegularFile(path))) fail(`configuration file not found: ${path}`, 3);
-    return { path, value: parseConfig(await readFile(path, "utf8"), path) };
-  }
+export async function loadConfig(cwd: string, explicitPath: string | null = null, disabled = false): Promise<ConfigLoadResult> {
+  if (disabled) return { path: null, value: emptyConfig() };
+
+  if (explicitPath) return readExplicitConfig(resolve(cwd, explicitPath));
 
   let cursor = resolve(cwd);
   while (true) {
@@ -116,33 +134,42 @@ export async function loadConfig(cwd: string, explicitPath?: string, disabled = 
     cursor = parent;
   }
 
-  return { value: {} };
+  return { path: null, value: emptyConfig() };
 }
 
 export function environmentConfig(env: NodeJS.ProcessEnv = process.env): ThistleccConfig {
-  const outputExtension = env.THISTLECC_OUTPUT_EXTENSION;
-  if (outputExtension !== undefined && outputExtension !== "39" && outputExtension !== "thx") {
+  const outputExtension = env.THISTLECC_OUTPUT_EXTENSION ?? null;
+  if (outputExtension != null && outputExtension !== "39" && outputExtension !== "thx") {
     fail("THISTLECC_OUTPUT_EXTENSION must be 39 or thx", 3);
   }
 
-  const result: ThistleccConfig = {};
-  const assign = (key: keyof ThistleccConfig, value: string | undefined): void => {
-    if (value !== undefined && value.length > 0) (result as Record<string, unknown>)[key] = value;
+  const result = emptyConfig();
+  const assign = (key: StringConfigKey, value: string | null): void => {
+    if (value != null && value.length > 0) result[key] = value;
   };
-  assign("mikuosHome", env.MIKUOS_HOME ?? env.THISTLE_HOME);
-  assign("converter", env.THISTLECC_CONVERTER ?? env.THISTLE_ELF2THX);
-  assign("cc", env.THISTLECC_CC ?? env.THISTLE_CC);
-  assign("cxx", env.THISTLECC_CXX ?? env.THISTLE_CXX);
-  assign("strip", env.THISTLECC_STRIP);
-  assign("readelf", env.THISTLECC_READELF);
-  assign("toolchainPrefix", env.THISTLECC_TOOLCHAIN_PREFIX);
-  assign("march", env.THISTLECC_MARCH);
-  assign("mabi", env.THISTLECC_MABI);
-  assign("sysroot", env.THISTLECC_SYSROOT);
-  if (outputExtension !== undefined) result.outputExtension = outputExtension;
+  assign("mikuosHome", env.MIKUOS_HOME ?? (env.THISTLE_HOME ?? null));
+  assign("converter", env.THISTLECC_CONVERTER ?? (env.THISTLE_ELF2THX ?? null));
+  assign("cc", env.THISTLECC_CC ?? (env.THISTLE_CC ?? null));
+  assign("cxx", env.THISTLECC_CXX ?? (env.THISTLE_CXX ?? null));
+  assign("strip", env.THISTLECC_STRIP ?? null);
+  assign("readelf", env.THISTLECC_READELF ?? null);
+  assign("toolchainPrefix", env.THISTLECC_TOOLCHAIN_PREFIX ?? null);
+  assign("march", env.THISTLECC_MARCH ?? null);
+  assign("mabi", env.THISTLECC_MABI ?? null);
+  assign("sysroot", env.THISTLECC_SYSROOT ?? null);
+  if (outputExtension != null) result.outputExtension = outputExtension;
   return result;
 }
 
 export function mergeConfig(...values: readonly ThistleccConfig[]): ThistleccConfig {
-  return Object.assign({}, ...values);
+  const result = emptyConfig();
+  for (const value of values) {
+    for (const key of ["mikuosHome", "converter", "cc", "cxx", "strip", "readelf", "toolchainPrefix", "march", "mabi", "sysroot"] as const) result[key] = value[key] ?? result[key];
+    result.outputExtension = value.outputExtension ?? result.outputExtension;
+    result.reproducible = value.reproducible ?? result.reproducible;
+    result.colour = value.colour ?? result.colour;
+    result.defaultArgs = value.defaultArgs ?? result.defaultArgs;
+    result.converterArgs = value.converterArgs ?? result.converterArgs;
+  }
+  return result;
 }

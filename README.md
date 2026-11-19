@@ -15,13 +15,26 @@ its loadable segments into a THX2 executable.
 
 ## Use
 
-    npm install
+    bun install
     bun link
     thistlecc --mikuos-home /path/to/project hello.c -o hello.39
     thistle++ --mikuos-home /path/to/project hello.cc -o hello.39
 
 The older `--thistle-home` spelling remains available for existing
 build scripts. With no output name, a final link uses `.39`.
+
+## Compiler driver validation
+
+Bun is the required host runtime; no JavaScript build is needed.
+
+```sh
+bun run guards
+bun run check
+bun run test:driver
+bun run test:assembler
+```
+
+`bun run test` runs all four checks in sequence.
 
 ## Build stages
 
@@ -30,6 +43,8 @@ The driver accepts normal compiler stages including `-E`, `-S`,
 interpreters and dynamic segments are rejected.
 
 ## Documentation
+
+[Module reference](docs/index.md)
 
 - [Compiler pipeline](docs/pipeline.md)
 - [Configuration](docs/configuration.md)
