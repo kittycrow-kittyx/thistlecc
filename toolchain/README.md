@@ -13,3 +13,12 @@ Subdirectories:
 - `hosted` contains small C and C++ build examples;
 - `patches` contains target-specific upstream patches;
 - `smoke` contains toolchain validation inputs.
+
+## Driver verification
+
+From the repository root:
+
+```sh
+bun install
+bun run test
+```

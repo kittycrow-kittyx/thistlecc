@@ -1,4 +1,4 @@
-export const VERSION = "2.0.0";
+export const VERSION = "2.1.1";
 
 export type Language = "auto" | "c" | "c++";
 export type Stage = "link" | "compile" | "assembly" | "preprocess" | "dependencies" | "relocatable";
@@ -7,59 +7,59 @@ export type ExtensionKind = "39" | "thx";
 export type ColourMode = "auto" | "always" | "never";
 
 export interface ThistleccConfig {
-  mikuosHome?: string;
-  converter?: string;
-  cc?: string;
-  cxx?: string;
-  strip?: string;
-  readelf?: string;
-  toolchainPrefix?: string;
-  march?: string;
-  mabi?: string;
-  sysroot?: string;
-  outputExtension?: ExtensionKind;
-  reproducible?: boolean;
-  colour?: ColourMode;
-  defaultArgs?: string[];
-  converterArgs?: string[];
+  mikuosHome: string | null;
+  converter: string | null;
+  cc: string | null;
+  cxx: string | null;
+  strip: string | null;
+  readelf: string | null;
+  toolchainPrefix: string | null;
+  march: string | null;
+  mabi: string | null;
+  sysroot: string | null;
+  outputExtension: ExtensionKind | null;
+  reproducible: boolean | null;
+  colour: ColourMode | null;
+  defaultArgs: string[] | null;
+  converterArgs: string[] | null;
 }
 
 export interface ConfigLoadResult {
-  path?: string;
+  path: string | null;
   value: ThistleccConfig;
 }
 
 export interface CliOptions {
   cwd: string;
-  configPath?: string;
+  configPath: string | null;
   noConfig: boolean;
-  mikuosHome?: string;
-  converter?: string;
-  cc?: string;
-  cxx?: string;
-  stripCommand?: string;
-  readelf?: string;
-  toolchainPrefix?: string;
+  mikuosHome: string | null;
+  converter: string | null;
+  cc: string | null;
+  cxx: string | null;
+  stripCommand: string | null;
+  readelf: string | null;
+  toolchainPrefix: string | null;
   march: string;
   mabi: string;
-  sysroot?: string;
+  sysroot: string | null;
   language: Language;
-  output?: string;
+  output: string | null;
   outputExtension: ExtensionKind;
   emit: EmitKind;
   keepElf: boolean;
-  keepElfPath?: string;
+  keepElfPath: string | null;
   strip: boolean;
   manifest: boolean;
-  manifestPath?: string;
+  manifestPath: string | null;
   depfile: boolean;
-  depfilePath?: string;
+  depfilePath: string | null;
   reproducible: boolean;
   colour: ColourMode;
   verbose: boolean;
   dryRun: boolean;
   keepWork: boolean;
-  keepWorkPath?: string;
+  keepWorkPath: string | null;
   doctor: boolean;
   printConfig: boolean;
   unsafeTarget: boolean;
@@ -70,9 +70,9 @@ export interface CliOptions {
 export interface ResolvedTools {
   compiler: string;
   compilerKind: "cc" | "cxx";
-  converter?: string;
-  strip?: string;
-  readelf?: string;
+  converter: string | null;
+  strip: string | null;
+  readelf: string | null;
 }
 
 export interface ElfSummary {
@@ -115,14 +115,18 @@ export interface Manifest {
     emit: EmitKind;
     language: "c" | "c++";
     reproducible: boolean;
-    sourceDateEpoch?: string;
+    sourceDateEpoch: string | null;
     compiler: string;
-    compilerVersion?: string;
-    converter?: string;
-    converterSha256?: string;
+    compilerVersion: string | null;
+    converter: string | null;
+    converterSha256: string | null;
     compilerArguments: string[];
-    converterArguments?: string[];
+    converterArguments: string[] | null;
   };
   inputs: Array<{ path: string; sha256: string }>;
   outputs: Array<{ path: string; kind: string; bytes: number; sha256: string }>;
 }
+
+/** Values permitted by the JSON data grammar. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+export interface JsonObject { [key: string]: JsonValue; }

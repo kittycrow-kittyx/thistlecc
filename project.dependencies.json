@@ -2,19 +2,10 @@
   "schema": 1,
   "dependencies": [
     {
-      "name": "KITTYX",
-      "repository": "kitty-crow/kittyx",
-      "path": "vendor/kittyx",
-      "commit": "6d6dbac796d59e8ea07c52cbcd3a0b7f181da163",
-      "relationship": "contract",
-      "direct": true,
-      "updatePolicy": "pull-request"
-    },
-    {
       "name": "ThistleASM",
-      "repository": "kitty-crow/thistle-asm",
-      "path": "vendor/thistle-asm",
-      "commit": "2e6ce603ceeb5b202aa68c0b1a5001fba85b8d77",
+      "repository": "kittycrow-kittyx/thistle-asm",
+      "path": "thistle-asm",
+      "commit": "92669473f6581c72c14b3c73ec9fa47773abaa71",
       "relationship": "toolchain",
       "direct": true,
       "updatePolicy": "pull-request"

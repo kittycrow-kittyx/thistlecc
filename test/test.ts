@@ -1,7 +1,8 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { ensureDirectory } from "../src/util.js";
+import { parseJsonObject } from "../src/json.js";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
-  basename,
   dirname,
   join,
   resolve,
@@ -9,23 +10,15 @@ import {
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import type { JsonObject } from "../src/types.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
-const testParent = resolve(testDirectory, "..");
-
-const packageRoot =
-  basename(testParent) === "dist"
-    ? resolve(testDirectory, "../..")
-    : testParent;
-
-const sourceCli = join(packageRoot, "bin", "thistlecc.ts");
-const builtCli = join(packageRoot, "dist", "bin", "thistlecc.js");
-const runningUnderBun = Boolean((process.versions as Record<string, string | undefined>).bun);
-const cli = runningUnderBun ? sourceCli : builtCli;
+const packageRoot = resolve(testDirectory, "..");
+const cli = join(packageRoot, "bin", "thistlecc.ts");
 const runtime = process.execPath;
 const temporary = await mkdtemp(join(tmpdir(), "thistlecc-2-test-"));
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -39,12 +32,10 @@ function run(args: string[], cwd = temporary, env: NodeJS.ProcessEnv = process.e
 }
 
 function fnv1a(bytes: Uint8Array): number {
-  let value = 0x811c9dc5;
-  for (const byte of bytes) {
-    value ^= byte;
-    value = Math.imul(value, 0x01000193);
-  }
-  return value >>> 0;
+  // Independent arithmetic reference for the 32-bit FNV-1a checksum.
+  let value = 0x811c9dc5n;
+  for (const byte of bytes) value = BigInt.asUintN(32, (value ^ BigInt(byte)) * 0x01000193n);
+  return Number(value);
 }
 
 async function assertThx(path: string): Promise<void> {
@@ -57,18 +48,18 @@ async function assertThx(path: string): Promise<void> {
 try {
   const compiler = join(temporary, "riscv64-unknown-linux-musl-gcc");
   const cxx = join(temporary, "riscv64-unknown-linux-musl-g++");
-  const converter = join(temporary, "elf2thx.js");
-  const brokenConverter = join(temporary, "broken-elf2thx.js");
+  const converter = join(temporary, "elf2thx.ts");
+  const brokenConverter = join(temporary, "broken-elf2thx.ts");
   const log = join(temporary, "compiler-args.jsonl");
 
-  const compilerSource = `#!/usr/bin/env node
+  const compilerSource = `#!/usr/bin/env bun
 import { appendFileSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 if (args.includes("--version")) { console.log("mock-riscv-musl 2.0"); process.exit(0); }
 if (args.includes("-dumpmachine")) { console.log("riscv64-unknown-linux-musl"); process.exit(0); }
 if (process.env.THISTLECC_MOCK_LOG) appendFileSync(process.env.THISTLECC_MOCK_LOG, JSON.stringify({ exe: process.argv[1], args }) + "\\n");
 const oi = args.lastIndexOf("-o");
-const output = oi >= 0 ? args[oi + 1] : undefined;
+const output = oi >= 0 ? args[oi + 1] : null;
 if (!output) { if (args.includes("-E") || args.includes("-M") || args.includes("-MM")) { console.log("hello.o: hello.c"); process.exit(0); } process.exit(2); }
 if (args.includes("-c") || args.includes("-S") || args.includes("-r")) {
   writeFileSync(output, Buffer.from(args.includes("-S") ? ".text\\n" : "MOCK-OBJECT"));
@@ -127,12 +118,29 @@ await writeFile(dst, out); await chmod(dst, 0o755);
 
   const version = run(["--version"]);
   assert(version.status === 0, `--version failed: ${version.stderr}`);
-  assert(version.stdout.trim() === "2.0.0", "wrong version");
+  assert(version.stdout.trim() === "2.1.1", "wrong version");
 
   const basic = run(["--cc", compiler, "--converter", converter, helloC], temporary, { ...process.env, THISTLECC_MOCK_LOG: log });
   assert(basic.status === 0, `basic C build failed:\n${basic.stdout}\n${basic.stderr}`);
   const defaultOutput = join(temporary, "hello.39");
   await assertThx(defaultOutput);
+
+  const sourceHome = join(temporary, "source-checkout");
+  const sourceDirectory = join(sourceHome, "src", "tool");
+  const nestedDirectory = join(sourceHome, "nested");
+  await ensureDirectory(sourceDirectory);
+  await mkdir(nestedDirectory);
+  await writeFile(join(sourceDirectory, "elf2thx.ts"), converterSource + "\nconst sourceOnly: boolean = true;\n");
+
+  const explicitHomeOutput = join(temporary, "source-home.39");
+  const explicitHome = run(["--cc", compiler, "--mikuos-home", sourceHome, helloC, "-o", explicitHomeOutput]);
+  assert(explicitHome.status === 0, `source converter discovery via --mikuos-home failed:\n${explicitHome.stderr}`);
+  await assertThx(explicitHomeOutput);
+
+  const ancestorOutput = join(temporary, "source-ancestor.39");
+  const ancestor = run(["--cc", compiler, helloC, "-o", ancestorOutput], nestedDirectory);
+  assert(ancestor.status === 0, `source converter discovery via ancestor failed:\n${ancestor.stderr}`);
+  await assertThx(ancestorOutput);
 
   const richOutput = join(temporary, "rich.thx");
   const rich = run([
@@ -148,8 +156,8 @@ await writeFile(dst, out); await chmod(dst, 0o755);
   assert(rich.status === 0, `manifest build failed:\n${rich.stdout}\n${rich.stderr}`);
   await assertThx(richOutput);
   assert((await stat(`${richOutput}.elf`)).size > 64, "kept ELF missing");
-  const manifest = JSON.parse(await readFile(`${richOutput}.manifest.json`, "utf8")) as Record<string, unknown>;
-  assert(manifest.schema === "dev.kittycrow.thistlecc.manifest.v2", "manifest schema mismatch");
+  const manifest: JsonObject = parseJsonObject(await readFile(`${richOutput}.manifest.json`, "utf8"));
+  assert((manifest.schema ?? null) === "dev.kittycrow.thistlecc.manifest.v2", "manifest schema mismatch");
   assert(JSON.stringify(manifest).includes("mikuOS"), "manifest identity missing");
 
   const cppOutput = join(temporary, "cpp.39");
@@ -207,15 +215,15 @@ ${dependencies.stderr}`);
 
   const doctor = run(["--cc", compiler, "--converter", converter, "--doctor"]);
   assert(doctor.status === 0, `doctor failed:\n${doctor.stdout}\n${doctor.stderr}`);
-  const report = JSON.parse(doctor.stdout) as Record<string, unknown>;
-  assert(report.thistlecc === "2.0.0", "doctor version mismatch");
+  const report: JsonObject = parseJsonObject(doctor.stdout);
+  assert((report.thistlecc ?? null) === "2.1.1", "doctor version mismatch");
 
   const argumentLog = await readFile(log, "utf8");
   assert(argumentLog.includes("-march=rv64gc"), "RV64GC target flag missing");
   assert(argumentLog.includes("-mabi=lp64d"), "LP64D target flag missing");
   assert(argumentLog.includes("--build-id=none"), "deterministic linker flag missing");
 
-  console.log("thistlecc 2.0.0 tests passed");
+  console.log("thistlecc 2.1.1 tests passed");
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

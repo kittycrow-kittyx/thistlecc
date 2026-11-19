@@ -1,5 +1,6 @@
+import { parseJson } from "./json.js";
 import { readFile } from "node:fs/promises";
-import type { ElfSummary, ThxSummary } from "./types.js";
+import type { ElfSummary, ThxSummary, JsonValue } from "./types.js";
 import { fail } from "./util.js";
 
 function safeNumber(value: bigint, name: string): number {
@@ -8,11 +9,12 @@ function safeNumber(value: bigint, name: string): number {
 }
 
 export async function inspectElf(path: string): Promise<ElfSummary> {
+  // THX accepts static, little-endian RV64 executables. The program table must lie within the file before it is traversed.
   const bytes = await readFile(path);
   if (bytes.length < 64) fail(`truncated ELF file: ${path}`, 4);
-  if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) fail(`not an ELF file: ${path}`, 4);
-  if (bytes[4] !== 2) fail(`ELF is not 64-bit: ${path}`, 4);
-  if (bytes[5] !== 1) fail(`ELF is not little-endian: ${path}`, 4);
+  if ((bytes[0] ?? -1) !== 0x7f || (bytes[1] ?? -1) !== 0x45 || (bytes[2] ?? -1) !== 0x4c || (bytes[3] ?? -1) !== 0x46) fail(`not an ELF file: ${path}`, 4);
+  if ((bytes[4] ?? -1) !== 2) fail(`ELF is not 64-bit: ${path}`, 4);
+  if ((bytes[5] ?? -1) !== 1) fail(`ELF is not little-endian: ${path}`, 4);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const type = view.getUint16(16, true);
   const machine = view.getUint16(18, true);
@@ -56,6 +58,7 @@ function fnv1a(bytes: Uint8Array): number {
 }
 
 export async function inspectThx(path: string): Promise<ThxSummary> {
+  // The envelope checksum covers metadata and payload; validate both lengths before interpreting the JSON identity.
   const bytes = await readFile(path);
   if (bytes.length < 16) fail(`truncated THX file: ${path}`, 4);
   const magic = new TextDecoder().decode(bytes.subarray(0, 4));
@@ -68,25 +71,26 @@ export async function inspectThx(path: string): Promise<ThxSummary> {
   const actualChecksum = fnv1a(bytes.subarray(16));
   if (checksum !== actualChecksum) fail(`THX2 checksum mismatch: ${path}`, 4);
 
-  let metadata: unknown;
+  let metadata: JsonValue;
   try {
-    metadata = JSON.parse(new TextDecoder().decode(bytes.subarray(16, 16 + metadataBytes)));
+    metadata = parseJson(new TextDecoder().decode(bytes.subarray(16, 16 + metadataBytes)));
   } catch (error) {
-    fail(`invalid THX2 metadata: ${error instanceof Error ? error.message : String(error)}`, 4);
+    fail(`invalid THX2 metadata: ${error instanceof Error ? error.message : (typeof error === "string" ? error : "non-Error exception")}`, 4);
   }
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) fail(`invalid THX2 metadata object: ${path}`, 4);
-  const record = metadata as Record<string, unknown>;
-  if (record.machine !== "thistle64" || record.ver !== 2 || record.isa !== "rv64gc") {
+  const record = metadata;
+  if ((record.machine ?? null) !== "thistle64" || (record.ver ?? null) !== 2 || (record.isa ?? null) !== "rv64gc") {
     fail(`THX2 identity mismatch; expected thistle64/version 2/rv64gc: ${path}`, 4);
   }
-  if (!Number.isSafeInteger(record.entry) || (record.entry as number) < 0) fail(`invalid THX2 entry address: ${path}`, 4);
+  const entry = record.entry ?? null;
+  if (typeof entry !== "number" || !Number.isSafeInteger(entry) || entry < 0) fail(`invalid THX2 entry address: ${path}`, 4);
 
   return {
     magic: "THX2",
     machine: "thistle64",
     version: 2,
     isa: "rv64gc",
-    entry: record.entry as number,
+    entry,
     payloadBytes,
     metadataBytes,
     checksum: `0x${checksum.toString(16).padStart(8, "0")}`,

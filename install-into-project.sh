@@ -22,7 +22,7 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 
 cd "$SOURCE"
-echo "Testing thistlecc 2.0.0 with Bun before installation..."
+echo "Testing thistlecc 2.1.1 with Bun before installation..."
 bun run ./test/test.ts
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -57,7 +57,7 @@ JSON
 cd "$PROJECT"
 
 echo
-echo "Installed thistlecc 2.0.0 at:"
+echo "Installed thistlecc 2.1.1 at:"
 echo "  $PROJECT/thistlecc"
 echo
 echo "Run directly:"

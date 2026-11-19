@@ -1,6 +1,6 @@
 {
   "name": "thistlecc",
-  "version": "2.0.0",
+  "version": "2.1.1",
   "description": "Bun-native TypeScript compiler driver for mikuOS Thistle64 RV64GC THX executables",
   "type": "module",
   "bin": {
@@ -18,14 +18,18 @@
     "install-into-project.sh"
   ],
   "scripts": {
-    "check": "tsc -p tsconfig.json --noEmit",
-    "test": "bun run ./test/test.ts && bun run ./test/thistleasm-compat.ts",
-    "test:node": "rm -rf dist && tsc -p tsconfig.build.json && node ./dist/test/test.js"
+    "check": "bun --bun tsc -p tsconfig.json --noEmit",
+    "test": "bun run guards && bun run check && bun run test:driver && bun run test:assembler",
+    "guards": "bash scripts/check-guards.sh",
+    "driver": "bun ./bin/thistlecc.ts",
+    "test:driver": "bun run ./test/test.ts",
+    "test:assembler": "bun run ./test/thistleasm-compat.ts"
   },
   "engines": {
     "bun": ">=1.2.0"
   },
   "devDependencies": {
+    "@kitty-crow/code-guards": "git+https://github.com/kitty-crow/code-guards.git#d1ce06c6b4a71e5f94ca97ba4b0f6780408aa3f6",
     "@types/node": "^22.0.0",
     "typescript": "^5.8.0"
   },

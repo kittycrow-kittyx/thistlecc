@@ -1,5 +1,14 @@
 # Changes
 
+## 2.1.1
+
+- Standardise the root ThistleASM dependency and consume its v2.1.1 release.
+
+## 2.1.0
+
+- distribute the Bun-native driver with the pinned ThistleASM release;
+- inherit KITTYX through ThistleASM.
+
 ## 2.0.0
 
 - rewrote the driver in TypeScript for Bun;

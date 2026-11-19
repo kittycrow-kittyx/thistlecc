@@ -6,3 +6,11 @@ original arguments.
 
 The TypeScript driver remains responsible for target selection, ELF
 validation and THX packing.
+
+## Driver interface
+
+From the repository root, inspect the flags forwarded by the shim:
+
+```sh
+bun run driver --help
+```

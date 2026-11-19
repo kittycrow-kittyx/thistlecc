@@ -86,19 +86,15 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     await compile(options, stage, language);
     return 0;
   } catch (error) {
-    if (error instanceof CliError) {
-      if (error.message === "__HELP__") {
-        process.stdout.write(helpText());
-        return 0;
-      }
-      if (error.message === "__VERSION__") {
-        process.stdout.write(`${VERSION}\n`);
-        return 0;
-      }
-      process.stderr.write(`thistlecc: ${error.message}\n`);
-      return error.exitCode;
+    if (error instanceof CliError && error.message === "__HELP__") {
+      process.stdout.write(helpText());
+      return 0;
     }
-    process.stderr.write(`thistlecc: ${errorMessage(error)}\n`);
-    return 1;
+    if (error instanceof CliError && error.message === "__VERSION__") {
+      process.stdout.write(`${VERSION}\n`);
+      return 0;
+    }
+    process.stderr.write(`thistlecc: ${errorMessage(error instanceof Error ? error : (typeof error === "string" ? error : "non-Error exception"))}\n`);
+    return error instanceof CliError ? error.exitCode : 1;
   }
 }

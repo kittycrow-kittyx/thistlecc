@@ -1,4 +1,4 @@
-import { codec, Exe } from "../vendor/thistle-asm/fmt.ts";
+import { codec, Exe } from "../thistle-asm/fmt.ts";
 
 const executable = new Exe("thistle64");
 executable.isa = "rv64gc";
